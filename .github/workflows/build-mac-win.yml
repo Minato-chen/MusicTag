@@ -45,7 +45,7 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@stable
         with:
-          targets: ${{ matrix.target }}
+          targets: ${{ matrix.platform == 'macos-latest' && matrix.target || '' }}
 
       - uses: swatinem/rust-cache@v2
         with:
@@ -59,7 +59,7 @@ jobs:
           tagName: ${{ (inputs.tag_name != '' && inputs.tag_name) || (startsWith(github.ref, 'refs/tags/v') && github.ref_name) || 'v__VERSION__' }}
           releaseName: ${{ (inputs.tag_name != '' && inputs.tag_name) || (startsWith(github.ref, 'refs/tags/v') && github.ref_name) || 'MusicTag v__VERSION__' }}
           releaseBody: 'MusicTag Mac & Windows 定制增强版（支持批量统一编辑、批量与单曲智能刮削、清空撤销与上下键快速翻页）'
-          releaseDraft: false
+          releaseDraft: true
           prerelease: false
           args: ${{ matrix.args }}
 
@@ -73,3 +73,24 @@ jobs:
             src-tauri/target/**/bundle/nsis/*.exe
             src-tauri/target/**/bundle/msi/*.msi
           if-no-files-found: warn
+
+  publish-release:
+    needs: build-tauri
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    if: always()
+    permissions:
+      contents: write
+    steps:
+      - name: Publish draft release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          TAG="${{ (inputs.tag_name != '' && inputs.tag_name) || (startsWith(github.ref, 'refs/tags/v') && github.ref_name) || 'v0.2.2' }}"
+          if release_json=$(gh release view "$TAG" --repo "${{ github.repository }}" --json isDraft 2>/dev/null); then
+            if [[ "$(jq -r '.isDraft' <<< "$release_json")" == "true" ]]; then
+              gh release edit "$TAG" --repo "${{ github.repository }}" --draft=false
+              echo "Successfully published release $TAG"
+            fi
+          fi
