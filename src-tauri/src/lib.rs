@@ -28,6 +28,8 @@ pub fn run() {
             commands::song::open_song,
             commands::song::save_song,
             commands::song::rename_song,
+            commands::song::batch_update_tags,
+            commands::song::batch_auto_match,
             commands::cover::pick_cover_file,
             commands::cover::read_cover_path,
             commands::cover::pick_cover_save_path,

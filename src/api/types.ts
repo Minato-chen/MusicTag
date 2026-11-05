@@ -81,3 +81,64 @@ export interface FolderChanged {
   watchId: number
   error: string | null
 }
+
+/** 批量修改标签字段（undefined 表示不修改，留空/非空表示更新） */
+export interface BatchTagFields {
+  album?: string
+  artist?: string
+  album_artist?: string
+  year?: string
+  genre?: string
+  track_total?: string
+  lyrics?: string
+  cover?: string
+  titles?: Record<string, string>
+  tracks?: Record<string, string>
+  rename_files?: Record<string, string>
+}
+
+/** 批量修改执行结果 */
+export interface BatchUpdateResult {
+  total: number
+  success_count: number
+  failure_count: number
+  errors: string[]
+}
+
+/** 批量自动匹配配置 */
+export interface BatchMatchOptions {
+  sources?: MusicSourceId[]
+  overwrite_title?: boolean
+  overwrite_artist?: boolean
+  overwrite_album?: boolean
+  overwrite_cover?: boolean
+  overwrite_lyrics?: boolean
+  only_missing?: boolean
+  export_lrc?: boolean
+  min_similarity?: number
+  concurrency?: number
+}
+
+/** 批量自动匹配单曲处理进度事件 */
+export interface BatchMatchProgress {
+  current: number
+  total: number
+  current_path: string
+  current_title: string
+  status: 'matched' | 'skipped' | 'failed' | string
+  matched_source: MusicSourceId | null
+  matched_title: string | null
+  matched_artist: string | null
+  similarity: number | null
+  error: string | null
+}
+
+/** 批量自动匹配最终汇总结果 */
+export interface BatchMatchSummary {
+  total: number
+  matched_count: number
+  skipped_count: number
+  failed_count: number
+  logs: BatchMatchProgress[]
+}
+

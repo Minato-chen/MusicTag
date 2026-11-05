@@ -2,16 +2,19 @@
 // 左栏：搜索框 + 展平列表。
 import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
 
-import { getLastDir, listSongs } from '../api/songs'
+import { getLastDir, listSongs, openSong } from '../api/songs'
 import type { MissingField } from '../api/types'
 import { filteredSongs } from '../store/selectors'
 import {
+  clearSelection,
   closeMissingFilter,
   initLastDir,
   MISSING_FIELDS,
   openMissingFilter,
   refreshFolder,
+  requestSwitch,
   resetFailedStartupFolder,
+  selectAllSongs,
   startFolderWatching,
   stopFolderWatching,
   scanMissing,
@@ -19,6 +22,23 @@ import {
   songStore,
 } from '../store/song'
 import SongRow from './SongRow.vue'
+import BatchAutoMatchDialog from './BatchAutoMatchDialog.vue'
+
+const showAutoMatchDialog = ref(false)
+const autoMatchTargetPaths = ref<string[]>([])
+
+function triggerAutoMatch(): void {
+  if (songStore.selectedPaths.length > 1) {
+    autoMatchTargetPaths.value = [...songStore.selectedPaths]
+  } else {
+    autoMatchTargetPaths.value = filteredSongs.value.map((s) => s.path)
+  }
+  showAutoMatchDialog.value = true
+}
+
+function onAutoMatchFinished(): void {
+  void refreshFolder()
+}
 
 function onKeydown(e: KeyboardEvent) {
   if (menuOpen.value && e.key === 'Escape') {
@@ -26,6 +46,53 @@ function onKeydown(e: KeyboardEvent) {
     closeMenu(true)
   }
   if (menuOpen.value && e.key === 'Tab') closeMenu(false)
+
+  // 全选快捷键 (Cmd+A / Ctrl+A)
+  const target = e.target as HTMLElement | null
+  const isTyping = target?.tagName === 'INPUT' || target?.tagName === 'TEXTAREA' || target?.isContentEditable
+  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'a') {
+    if (!isTyping) {
+      e.preventDefault()
+      selectAllSongs(filteredSongs.value.map((s) => s.path))
+      return
+    }
+  }
+
+  // 退出多选 (Escape)
+  if (e.key === 'Escape' && songStore.selectedPaths.length > 1) {
+    clearSelection()
+    return
+  }
+
+  // 键盘上下按键切换歌曲 (ArrowUp / ArrowDown)
+  if (!isTyping && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) {
+    if (filteredSongs.value.length === 0) return
+    e.preventDefault()
+
+    const list = filteredSongs.value
+    const currentPath = songStore.selectedPath
+    let nextIdx = 0
+
+    if (currentPath) {
+      const idx = list.findIndex((s) => s.path === currentPath)
+      if (idx !== -1) {
+        if (e.key === 'ArrowDown') {
+          nextIdx = Math.min(list.length - 1, idx + 1)
+        } else {
+          nextIdx = Math.max(0, idx - 1)
+        }
+      }
+    }
+
+    const nextSong = list[nextIdx]
+    if (nextSong && nextSong.path !== currentPath) {
+      void requestSwitch(nextSong.path, openSong)
+      void nextTick(() => {
+        const el = document.querySelector('.song-row.selected')
+        el?.scrollIntoView({ block: 'nearest' })
+      })
+    }
+  }
 }
 
 const missingLabels: Record<MissingField, string> = {
@@ -150,14 +217,49 @@ onUnmounted(() => {
         type="text"
         placeholder="搜索歌名 / 作者"
       />
-      <button
-        class="missing-filter-btn"
-        type="button"
-        :disabled="songStore.folderPath === null"
-        @click="openMissingFilter()"
-      >
-        筛选缺失
-      </button>
+      <div class="list-head-actions">
+        <button
+          class="batch-match-btn"
+          type="button"
+          :disabled="songStore.folderPath === null || filteredSongs.length === 0"
+          title="批量自动匹配与刮削标签/封面/歌词"
+          @click="triggerAutoMatch"
+        >
+          ✨ 批量刮削
+        </button>
+        <button
+          class="missing-filter-btn"
+          type="button"
+          :disabled="songStore.folderPath === null"
+          @click="openMissingFilter()"
+        >
+          筛选缺失
+        </button>
+      </div>
+    </div>
+
+    <!-- 批量选择状态栏 -->
+    <div v-if="songStore.selectedPaths.length > 1" class="batch-status-bar">
+      <span>已选 {{ songStore.selectedPaths.length }} 项</span>
+      <div class="batch-status-actions">
+        <button
+          type="button"
+          class="batch-status-btn primary"
+          @click="triggerAutoMatch"
+        >
+          ✨ 刮削选定
+        </button>
+        <button
+          type="button"
+          class="batch-status-btn"
+          @click="selectAllSongs(filteredSongs.map((s) => s.path))"
+        >
+          全选 ({{ filteredSongs.length }})
+        </button>
+        <button type="button" class="batch-status-btn" @click="clearSelection">
+          取消
+        </button>
+      </div>
     </div>
 
     <div v-if="songStore.missingFilterEnabled" class="missing-panel" data-testid="missing-panel">
@@ -253,10 +355,59 @@ onUnmounted(() => {
       <button ref="refreshButton" role="menuitem" type="button" :disabled="songStore.folderPath === null"
         @click="manualRefresh" @keydown.down.prevent="refreshButton?.focus()" @keydown.up.prevent="refreshButton?.focus()">刷新</button>
     </div>
+
+    <!-- 批量自动匹配模态框 -->
+    <BatchAutoMatchDialog
+      v-model:open="showAutoMatchDialog"
+      :target-paths="autoMatchTargetPaths"
+      @finished="onAutoMatchFinished"
+    />
   </aside>
 </template>
 
 <style scoped>
+.list-head-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.batch-match-btn {
+  flex: 1;
+  padding: 6px 8px;
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.12s;
+  white-space: nowrap;
+}
+
+.batch-match-btn:hover:not(:disabled) {
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+
+.batch-match-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+  border-color: var(--border);
+  color: var(--text-dim);
+  background: transparent;
+}
+
+.batch-status-btn.primary {
+  border-color: var(--accent);
+  color: var(--accent);
+  font-weight: 700;
+}
+
+.batch-status-btn.primary:hover {
+  background: var(--accent);
+  color: var(--accent-ink);
+}
 .song-list {
   display: flex;
   flex-direction: column;
@@ -451,5 +602,38 @@ ul {
   flex: 1 1 auto;
   min-height: 0;
   padding: 6px;
+}
+
+/* ---------- 批量选择状态栏 ---------- */
+.batch-status-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 12px;
+  background: var(--panel-2);
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.batch-status-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.batch-status-btn {
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text);
+  font-size: 11px;
+  padding: 2px 6px;
+  cursor: pointer;
+}
+
+.batch-status-btn:hover {
+  background: var(--hover);
+  color: var(--accent);
 }
 </style>

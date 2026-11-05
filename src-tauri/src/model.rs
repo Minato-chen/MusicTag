@@ -152,3 +152,113 @@ pub struct SearchResult {
     pub source_stats: Vec<(MusicSourceId, usize)>,
     pub all_failed: bool,
 }
+
+/// 批量修改标签字段（Option::Some 表示需要修改，None 表示保持原样）
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct BatchTagFields {
+    pub album: Option<String>,
+    pub artist: Option<String>,
+    pub album_artist: Option<String>,
+    pub year: Option<String>,
+    pub genre: Option<String>,
+    pub track_total: Option<String>,
+    pub lyrics: Option<String>,
+    pub cover: Option<String>,
+    pub titles: Option<std::collections::HashMap<String, String>>,
+    pub tracks: Option<std::collections::HashMap<String, String>>,
+    pub rename_files: Option<std::collections::HashMap<String, String>>,
+}
+
+/// 批量修改执行结果
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BatchUpdateResult {
+    pub total: usize,
+    pub success_count: usize,
+    pub failure_count: usize,
+    pub errors: Vec<String>,
+}
+
+fn default_true() -> bool {
+    true
+}
+
+fn default_min_similarity() -> f32 {
+    0.60
+}
+
+fn default_concurrency() -> usize {
+    4
+}
+
+/// 批量自动匹配刮削配置
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BatchMatchOptions {
+    #[serde(default)]
+    pub sources: Vec<MusicSourceId>,
+    #[serde(default = "default_true")]
+    pub overwrite_title: bool,
+    #[serde(default = "default_true")]
+    pub overwrite_artist: bool,
+    #[serde(default = "default_true")]
+    pub overwrite_album: bool,
+    #[serde(default = "default_true")]
+    pub overwrite_cover: bool,
+    #[serde(default = "default_true")]
+    pub overwrite_lyrics: bool,
+    #[serde(default)]
+    pub only_missing: bool,
+    #[serde(default)]
+    pub export_lrc: bool,
+    #[serde(default = "default_min_similarity")]
+    pub min_similarity: f32,
+    #[serde(default = "default_concurrency")]
+    pub concurrency: usize,
+}
+
+impl Default for BatchMatchOptions {
+    fn default() -> Self {
+        Self {
+            sources: vec![
+                MusicSourceId::Netease,
+                MusicSourceId::QqMusic,
+                MusicSourceId::Kugou,
+                MusicSourceId::Lrclib,
+                MusicSourceId::Itunes,
+            ],
+            overwrite_title: true,
+            overwrite_artist: true,
+            overwrite_album: true,
+            overwrite_cover: true,
+            overwrite_lyrics: true,
+            only_missing: false,
+            export_lrc: false,
+            min_similarity: 0.60,
+            concurrency: 4,
+        }
+    }
+}
+
+/// 批量自动匹配单曲处理进度事件
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BatchMatchProgress {
+    pub current: usize,
+    pub total: usize,
+    pub current_path: String,
+    pub current_title: String,
+    pub status: String, // "matched" | "skipped" | "failed"
+    pub matched_source: Option<MusicSourceId>,
+    pub matched_title: Option<String>,
+    pub matched_artist: Option<String>,
+    pub similarity: Option<f32>,
+    pub error: Option<String>,
+}
+
+/// 批量自动匹配最终汇总结果
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BatchMatchSummary {
+    pub total: usize,
+    pub matched_count: usize,
+    pub skipped_count: usize,
+    pub failed_count: usize,
+    pub logs: Vec<BatchMatchProgress>,
+}

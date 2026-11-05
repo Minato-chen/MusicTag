@@ -3,6 +3,7 @@
 // 模块声明 `pub` 供 `src-tauri/tests/` 集成测试经 `app_lib::service::` 访问
 // （design.md §10 分层规范：reader/writer/meta/cover/fs_atomic/lyrics/rename/config）。
 
+pub mod batch_matcher;
 pub mod config;
 pub mod cover;
 pub mod folder_watch;

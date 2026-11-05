@@ -88,3 +88,188 @@ pub fn save_song(song: Song, export_lrc: bool) -> Result<(), String> {
     }
     Ok(())
 }
+
+/// 批量修改多个音频文件的指定标签字段（播客/音频批量改专辑名等）。
+/// 仅修改 fields 中为 Some 的字段，其余字段完全保留原样。
+pub fn batch_update_tags(
+    paths: &[String],
+    fields: &crate::model::BatchTagFields,
+) -> Result<crate::model::BatchUpdateResult, String> {
+    let mut success_count = 0;
+    let mut failure_count = 0;
+    let mut errors = Vec::new();
+
+    for p in paths {
+        let path = Path::new(p);
+        if !path.exists() {
+            errors.push(format!("{p}: 文件不存在"));
+            failure_count += 1;
+            continue;
+        }
+
+        match update_single_file_tags(path, fields) {
+            Ok(_) => success_count += 1,
+            Err(e) => {
+                errors.push(format!("{p}: {e}"));
+                failure_count += 1;
+            }
+        }
+    }
+
+    Ok(crate::model::BatchUpdateResult {
+        total: paths.len(),
+        success_count,
+        failure_count,
+        errors,
+    })
+}
+
+fn update_single_file_tags(
+    path: &Path,
+    fields: &crate::model::BatchTagFields,
+) -> Result<(), String> {
+    let mut tagged_file = Probe::open(path)
+        .and_then(|probed| probed.read())
+        .map_err(|e| format!("读取标签失败: {e}"))?;
+
+    let has_riff_info =
+        tagged_file.file_type() == FileType::Wav && tagged_file.tag(TagType::RiffInfo).is_some();
+
+    if tagged_file.primary_tag().is_none() {
+        let tag_type = tagged_file.primary_tag_type();
+        if !matches!(tag_type, TagType::Ape | TagType::Id3v2 | TagType::Mp4Ilst) {
+            return Err("文件缺少可写的主标签".to_string());
+        }
+        tagged_file.insert_tag(Tag::new(tag_type));
+    }
+
+    {
+        use lofty::tag::ItemKey;
+        let tag = tagged_file
+            .primary_tag_mut()
+            .ok_or_else(|| "文件缺少可写的主标签".to_string())?;
+
+        let path_str = path.to_string_lossy();
+
+        if let Some(ref titles) = fields.titles {
+            if let Some(title) = titles.get(path_str.as_ref()) {
+                apply_field(tag, ItemKey::TrackTitle, title);
+            }
+        }
+        if let Some(ref tracks) = fields.tracks {
+            if let Some(track) = tracks.get(path_str.as_ref()) {
+                apply_field(tag, ItemKey::TrackNumber, track);
+            }
+        }
+        if let Some(ref track_total) = fields.track_total {
+            apply_field(tag, ItemKey::TrackTotal, track_total);
+        }
+        if let Some(ref album) = fields.album {
+            apply_field(tag, ItemKey::AlbumTitle, album);
+        }
+        if let Some(ref artist) = fields.artist {
+            apply_field(tag, ItemKey::TrackArtist, artist);
+        }
+        if let Some(ref album_artist) = fields.album_artist {
+            apply_field(tag, ItemKey::AlbumArtist, album_artist);
+        }
+        if let Some(ref year) = fields.year {
+            apply_field(tag, ItemKey::RecordingDate, year);
+        }
+        if let Some(ref genre) = fields.genre {
+            apply_field(tag, ItemKey::Genre, genre);
+        }
+        if let Some(ref lyrics) = fields.lyrics {
+            apply_field(tag, ItemKey::Lyrics, lyrics);
+            apply_field(tag, ItemKey::UnsyncLyrics, lyrics);
+        }
+        if let Some(ref cover_str) = fields.cover {
+            while !tag.pictures().is_empty() {
+                tag.remove_picture(0);
+            }
+            if !cover_str.trim().is_empty() {
+                let (bytes, mime) = crate::service::cover::decode_cover(cover_str)?;
+                let (comp_bytes, comp_mime) = crate::service::cover::compress_cover(&bytes, &mime)
+                    .unwrap_or((bytes, mime));
+                let pic = lofty::picture::Picture::unchecked(comp_bytes)
+                    .pic_type(lofty::picture::PictureType::CoverFront)
+                    .mime_type(lofty::picture::MimeType::from_str(&comp_mime))
+                    .build();
+                tag.push_picture(pic);
+            }
+        }
+    }
+
+    if has_riff_info {
+        use lofty::tag::ItemKey;
+        if let Some(riff_info) = tagged_file.tag_mut(TagType::RiffInfo) {
+            let path_str = path.to_string_lossy();
+            if let Some(ref titles) = fields.titles {
+                if let Some(title) = titles.get(path_str.as_ref()) {
+                    apply_field(riff_info, ItemKey::TrackTitle, title);
+                }
+            }
+            if let Some(ref tracks) = fields.tracks {
+                if let Some(track) = tracks.get(path_str.as_ref()) {
+                    apply_field(riff_info, ItemKey::TrackNumber, track);
+                }
+            }
+            if let Some(ref track_total) = fields.track_total {
+                apply_field(riff_info, ItemKey::TrackTotal, track_total);
+            }
+            if let Some(ref album) = fields.album {
+                apply_field(riff_info, ItemKey::AlbumTitle, album);
+            }
+            if let Some(ref artist) = fields.artist {
+                apply_field(riff_info, ItemKey::TrackArtist, artist);
+            }
+            if let Some(ref year) = fields.year {
+                apply_field(riff_info, ItemKey::RecordingDate, year);
+            }
+            if let Some(ref genre) = fields.genre {
+                apply_field(riff_info, ItemKey::Genre, genre);
+            }
+        }
+    }
+
+    let ape_tag = tagged_file
+        .primary_tag()
+        .filter(|tag| tag.tag_type() == TagType::Ape)
+        .map(|tag| ApeTag::from(tag.clone()));
+
+    write_atomic_with(path, move |file| {
+        if let Some(ape_tag) = ape_tag {
+            use lofty::prelude::TagExt;
+            ape_tag
+                .save_to(file, WriteOptions::default())
+                .map_err(std::io::Error::other)?;
+        } else {
+            tagged_file
+                .save_to(file, WriteOptions::default())
+                .map_err(std::io::Error::other)?;
+        }
+        Ok(())
+    })
+    .map_err(|e| format!("写回文件失败: {e}"))?;
+
+    if let Some(ref rename_map) = fields.rename_files {
+        let path_str = path.to_string_lossy();
+        if let Some(new_name) = rename_map.get(path_str.as_ref()) {
+            if let Some(old_name) = path.file_name().and_then(|s| s.to_str()) {
+                if old_name != new_name {
+                    crate::service::rename::rename_song(path, new_name)?;
+                }
+            }
+        }
+    }
+
+    Ok(())
+}
+
+fn apply_field(tag: &mut Tag, key: lofty::tag::ItemKey, val: &str) {
+    if val.is_empty() {
+        tag.remove_key(key);
+    } else {
+        tag.insert_text(key, val.to_string());
+    }
+}

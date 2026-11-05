@@ -105,6 +105,8 @@ interface SongEditor {
   missingScanSeq: number
   /** 被选中歌曲的 path（null = 无选中）。 */
   selectedPath: string | null
+  /** 被选中歌曲的 path 列表（多选模式）。 */
+  selectedPaths: string[]
   /** 编辑中歌曲（open_song 结果，表单 v-model 绑它）。 */
   current: Song | null
   /** 打开时快照（dirty 对比基准；编辑不污染它）。 */
@@ -166,6 +168,7 @@ export async function selectSong(
   loadSong?: (path: string) => Promise<Song>,
 ): Promise<void> {
   raw.selectedPath = path
+  raw.selectedPaths = path !== null ? [path] : []
   if (path !== null && loadSong !== undefined) {
     await open(path, loadSong)
     // D1：选中即搜——open 成功后、current 非空且 !readonly 触发（后台异步，不阻塞编辑）。
@@ -174,6 +177,59 @@ export async function selectSong(
       void autoSearchOnSelect()
     }
   }
+}
+
+/** Cmd/Ctrl + 点击：切换单条选中状态 */
+export function toggleSelectSong(path: string): void {
+  const index = raw.selectedPaths.indexOf(path)
+  if (index >= 0) {
+    raw.selectedPaths.splice(index, 1)
+  } else {
+    raw.selectedPaths.push(path)
+  }
+  raw.selectedPath = raw.selectedPaths.length === 1 ? raw.selectedPaths[0] : null
+  if (raw.selectedPaths.length !== 1) {
+    raw.current = null
+    raw.original = null
+  }
+}
+
+/** Shift + 点击：连续范围多选 */
+export function selectRangeSongs(targetPath: string, allPaths: string[]): void {
+  const anchor = raw.selectedPath ?? (raw.selectedPaths.length > 0 ? raw.selectedPaths[raw.selectedPaths.length - 1] : targetPath)
+  const anchorIdx = allPaths.indexOf(anchor)
+  const targetIdx = allPaths.indexOf(targetPath)
+  if (anchorIdx === -1 || targetIdx === -1) {
+    raw.selectedPaths = [targetPath]
+    raw.selectedPath = targetPath
+    return
+  }
+  const start = Math.min(anchorIdx, targetIdx)
+  const end = Math.max(anchorIdx, targetIdx)
+  raw.selectedPaths = allPaths.slice(start, end + 1)
+  raw.selectedPath = raw.selectedPaths.length === 1 ? raw.selectedPaths[0] : null
+  if (raw.selectedPaths.length !== 1) {
+    raw.current = null
+    raw.original = null
+  }
+}
+
+/** Cmd/Ctrl + A：全选当前筛选列表的所有歌曲 */
+export function selectAllSongs(paths: string[]): void {
+  raw.selectedPaths = [...paths]
+  raw.selectedPath = paths.length === 1 ? paths[0] : null
+  if (raw.selectedPaths.length !== 1) {
+    raw.current = null
+    raw.original = null
+  }
+}
+
+/** 清空选择 */
+export function clearSelection(): void {
+  raw.selectedPaths = []
+  raw.selectedPath = null
+  raw.current = null
+  raw.original = null
 }
 
 /**
@@ -199,6 +255,7 @@ export async function activateFolder(
   raw.folderRefreshing = false
   resetMissingFilterState()
   raw.selectedPath = null
+  raw.selectedPaths = []
   raw.current = null
   raw.original = null
   raw.readonly = false
@@ -556,6 +613,7 @@ const raw = reactive<SongEditor>({
   missingScanError: '',
   missingScanSeq: 0,
   selectedPath: null,
+  selectedPaths: [],
   current: null,
   original: null,
   // dirty 为 reactive getter（Vue 3.5 会把 getter 转成 live computed）：
@@ -1022,6 +1080,27 @@ export async function undo(): Promise<void> {
   // D5：badge 回到 original 的来源（候选保留——仍是当前歌，可重选）
   raw.lyricSourcePlatform = null
   raw.lyricFetchEmpty = false
+}
+
+/**
+ * 一键清空当前歌曲的所有可编辑元数据（歌名、歌手、专辑、音轨、年份、流派、歌词、封面）。
+ * 严格保留路径与文件名。清空后标记为 dirty，可通过原有「撤销」按钮一键复原，或通过「保存」真正写盘。
+ */
+export function clearCurrentSongFields(): void {
+  if (raw.current === null || raw.readonly) return
+  raw.current.title = ''
+  raw.current.artist = ''
+  raw.current.album = ''
+  raw.current.album_artist = ''
+  raw.current.track = ''
+  raw.current.track_total = ''
+  raw.current.year = ''
+  raw.current.genre = ''
+  raw.current.lyrics = ''
+  raw.current.lyrics_source = 'none'
+  raw.current.cover = null
+  raw.current.cover_mime = null
+  raw.saveState = 'idle'
 }
 
 /**

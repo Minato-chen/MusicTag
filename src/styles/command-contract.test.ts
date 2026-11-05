@@ -92,18 +92,18 @@ function diffMessage(name: string, cmds: string[]): string {
 }
 
 describe('Tauri command 契约一致性守卫（真值 = lib.rs generate_handler! 注册集）', () => {
-  it('lib.rs 实际注册恰为 22 个 command（防正则退化/漏匹配）', () => {
-    expect(libCommands, `lib.rs 提取到 ${libCommands.length} 个: [${libCommands.join(', ')}]`).toHaveLength(22)
-    expect(new Set(libCommands).size).toBe(22)
+  it('lib.rs 实际注册恰为 24 个 command（防正则退化/漏匹配）', () => {
+    expect(libCommands, `lib.rs 提取到 ${libCommands.length} 个: [${libCommands.join(', ')}]`).toHaveLength(24)
+    expect(new Set(libCommands).size).toBe(24)
   })
 
   it.each(sources)('%s 与 lib.rs 注册集一致', (_name, cmds) => {
     expect(cmds, diffMessage(_name, cmds)).toEqual(libCommands)
   })
 
-  it.each(sources)('%s 契约清单去重后恰为 22 个（防正则漏匹配）', (_name, cmds) => {
-    expect(cmds, `${_name} 提取到 ${cmds.length} 个: [${cmds.join(', ')}]`).toHaveLength(22)
-    expect(new Set(cmds).size).toBe(22)
+  it.each(sources)('%s 契约清单去重后恰为 24 个（防正则漏匹配）', (_name, cmds) => {
+    expect(cmds, `${_name} 提取到 ${cmds.length} 个: [${cmds.join(', ')}]`).toHaveLength(24)
+    expect(new Set(cmds).size).toBe(24)
   })
 
   // 签名层 spot-check：lib.rs 无参 command 在三源契约表中必须写成 `name()`（无参）。

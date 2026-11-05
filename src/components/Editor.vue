@@ -6,6 +6,7 @@
 // - 展示态：EditorBar + FieldGrid（字段列 + 封面区）+ LyricPanel（歌词）
 // 本变更仅展示形态：字段可编辑（v-model 绑 current），保存语义归 v1-song-save。
 import { songStore } from '../store/song'
+import BatchEditor from './BatchEditor.vue'
 import EditorBar from './EditorBar.vue'
 import FieldGrid from './FieldGrid.vue'
 import LyricPanel from './LyricPanel.vue'
@@ -13,8 +14,11 @@ import LyricPanel from './LyricPanel.vue'
 
 <template>
   <div class="editor" data-testid="editor">
+    <!-- 批量编辑态：选中多首歌曲 -->
+    <BatchEditor v-if="songStore.selectedPaths.length > 1" />
+
     <!-- 空态：未打开歌曲 / 未选中 -->
-    <div v-if="songStore.current === null && !songStore.readonly" class="editor-empty">
+    <div v-else-if="songStore.current === null && !songStore.readonly" class="editor-empty">
       <div class="empty-mark" aria-hidden="true">♪</div>
       <div class="empty-title">从左侧选择一首歌曲</div>
       <div class="empty-hint">支持 FLAC / MP3 · 选中后读取完整标签与封面</div>

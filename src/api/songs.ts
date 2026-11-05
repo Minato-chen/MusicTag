@@ -5,7 +5,19 @@
 // pick_cover_save_path / export_cover。实现 = `invokeCommand` 透传，
 // 组件与 store 一律经此层发 IPC（store 动作的 loader 注入 api/songs.ts 封装）。
 import { invokeCommand, listenEvent } from './client'
-import type { CoverInput, FolderChanged, MissingField, MissingScanResult, Song, SongSummary } from './types'
+import type {
+  BatchMatchOptions,
+  BatchMatchProgress,
+  BatchMatchSummary,
+  BatchTagFields,
+  BatchUpdateResult,
+  CoverInput,
+  FolderChanged,
+  MissingField,
+  MissingScanResult,
+  Song,
+  SongSummary,
+} from './types'
 
 /** 打开原生文件夹选择器。取消返回 null，否则返回目录绝对路径。 */
 export function pickFolder(): Promise<string | null> {
@@ -80,4 +92,25 @@ export function watchFolder(dir: string | null, watchId: number): Promise<void> 
 /** 仅通知目录失效，不根据增量修改列表。 */
 export function listenFolderChanged(handler: (event: FolderChanged) => void) {
   return listenEvent<FolderChanged>('folder-changed', (event) => handler(event.payload))
+}
+
+/** 批量修改多首歌曲的特定标签（播客/音频批量改专辑名等）。 */
+export function batchUpdateTags(
+  paths: string[],
+  fields: BatchTagFields,
+): Promise<BatchUpdateResult> {
+  return invokeCommand<BatchUpdateResult>('batch_update_tags', { paths, fields })
+}
+
+/** 批量自动匹配与刮削标签、封面与歌词 */
+export function batchAutoMatch(
+  paths: string[],
+  options: BatchMatchOptions,
+): Promise<BatchMatchSummary> {
+  return invokeCommand<BatchMatchSummary>('batch_auto_match', { paths, options })
+}
+
+/** 监听批量匹配实时进度事件 */
+export function listenBatchMatchProgress(handler: (event: BatchMatchProgress) => void) {
+  return listenEvent<BatchMatchProgress>('batch-match-progress', (event) => handler(event.payload))
 }

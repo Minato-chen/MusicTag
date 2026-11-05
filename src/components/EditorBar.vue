@@ -2,8 +2,20 @@
 // 编辑顶栏（design.md §5 editor-bar）：正在编辑 + 保存状态 + 保存/撤销。
 // v1-song-save 接入保存状态机：dirty 琥珀 / 保存中 / ✓ 已保存 绿 / ✕ 保存失败：原因。
 // 保存状态由 readonly/dirty/saveState 三者合成（design.md D7，saveState 只存动作态）。
+import { ref } from 'vue'
+import { openSong } from '../api/songs'
 import { fileName } from '../lib/path'
-import { save, songStore, undo } from '../store/song'
+import { clearCurrentSongFields, open, refreshFolder, save, songStore, undo } from '../store/song'
+import BatchAutoMatchDialog from './BatchAutoMatchDialog.vue'
+
+const showSingleScrapeDialog = ref(false)
+
+async function onSingleScrapeFinished() {
+  if (songStore.selectedPath) {
+    await open(songStore.selectedPath, openSong)
+    void refreshFolder()
+  }
+}
 
 // 保存中：为 true 时保存/撤销按钮均禁用（design.md D6 防连点并发写同一文件）
 const saving = () => songStore.saveState === 'saving'
@@ -39,6 +51,20 @@ const renamePending = () => songStore.renamePending
     <!-- 撤销 / 保存（design.md D9 接语义） -->
     <div class="editor-actions">
       <button
+        class="btn btn-tool scrape-btn"
+        type="button"
+        :disabled="songStore.readonly || !songStore.selectedPath || saving()"
+        title="按规则智能检索并刮削本首歌曲的标签、封面和歌词"
+        @click="showSingleScrapeDialog = true"
+      >✨ 刮削本首</button>
+      <button
+        class="btn btn-tool clear-btn"
+        type="button"
+        :disabled="songStore.readonly || !songStore.current || saving()"
+        title="清空当前歌曲的所有标签、封面和歌词（保留文件名，可随时撤销）"
+        @click="clearCurrentSongFields"
+      >清空全部</button>
+      <button
         class="btn btn-ghost"
         type="button"
         :disabled="!songStore.dirty || saving()"
@@ -51,10 +77,31 @@ const renamePending = () => songStore.renamePending
         @click="save(songStore.exportLrc)"
       >保存</button>
     </div>
+
+    <!-- 单首刮削模态框（弹出同样选框供自定义） -->
+    <BatchAutoMatchDialog
+      v-if="songStore.selectedPath"
+      v-model:open="showSingleScrapeDialog"
+      :target-paths="[songStore.selectedPath]"
+      @finished="onSingleScrapeFinished"
+    />
   </div>
 </template>
 
 <style scoped>
+.scrape-btn {
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 30%, transparent);
+}
+
+.scrape-btn:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--accent) 15%, transparent);
+}
+
+.clear-btn:hover:not(:disabled) {
+  color: var(--danger);
+  border-color: color-mix(in srgb, var(--danger) 30%, transparent);
+}
 .editor-bar {
   display: flex;
   align-items: center;
@@ -145,6 +192,16 @@ const renamePending = () => songStore.renamePending
   background: transparent;
   color: var(--text);
   border: 1px solid var(--border);
+}
+
+.btn-tool {
+  background: transparent;
+  color: var(--text);
+  border: 1px solid var(--border);
+}
+
+.btn-tool:hover:not(:disabled) {
+  background: var(--hover);
 }
 
 .btn-ghost:hover {

@@ -7,8 +7,13 @@ import { computed } from 'vue'
 
 import { openSong } from '../api/songs'
 import type { MissingField, Song, SongSummary } from '../api/types'
-import { artistText, titleText } from '../store/selectors'
-import { requestSwitch, songStore } from '../store/song'
+import { artistText, filteredSongs, titleText } from '../store/selectors'
+import {
+  requestSwitch,
+  selectRangeSongs,
+  songStore,
+  toggleSelectSong,
+} from '../store/song'
 
 const props = defineProps<{
   song: SongSummary
@@ -28,16 +33,30 @@ const missingBadges = computed(() =>
     .map((field) => missingLabels[field]),
 )
 
-/** 该行是否被选中（store 比对 path）。 */
-const isSelected = () => songStore.selectedPath === props.song.path
+/** 该行是否被选中（store 比对 path 或多选集合）。 */
+const isSelected = () =>
+  songStore.selectedPaths.includes(props.song.path) || songStore.selectedPath === props.song.path
 
 /** 打开歌曲：api/songs.ts 的 openSong（invoke('open_song', { path }) 读全量标签）。 */
 function loadSong(path: string): Promise<Song> {
   return openSong(path)
 }
 
-/** 点击选中该行：走 dirty 拦截门（干净直接切；脏 → 弹窗三选一）。 */
-function select() {
+/** 点击选中该行：支持 Cmd/Ctrl 多选、Shift 范围选、以及 dirty 拦截门。 */
+function select(event?: MouseEvent) {
+  if (event && !songStore.dirty) {
+    if (event.metaKey || event.ctrlKey) {
+      toggleSelectSong(props.song.path)
+      return
+    }
+    if (event.shiftKey) {
+      selectRangeSongs(
+        props.song.path,
+        filteredSongs.value.map((s) => s.path),
+      )
+      return
+    }
+  }
   requestSwitch(props.song.path, loadSong)
 }
 </script>
@@ -47,7 +66,7 @@ function select() {
     class="song-row"
     :class="{ selected: isSelected() }"
     :data-path="song.path"
-    @click="select"
+    @click="select($event)"
   >
     <span class="row-artist">{{ artistText(song) }}</span>
     <span class="row-title">{{ titleText(song) }}</span>

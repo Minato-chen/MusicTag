@@ -375,6 +375,8 @@ interface UpdateCheckResult {
 | `list_songs(dir)` | `String → Vec<SongSummary>` | 打开文件夹，深度遍历；**只读列表项**（`path`/`title`/`artist`，歌名/作者空时前端回退显示文件名） |
 | `open_song(path)` | `String → Result<Song, String>` | 读取一首的**完整**标签 + 封面 base64，放进编辑区（按需读取；坏标签 → `Err`，表单只读） |
 | `save_song(song, exportLrc)` | `Song, bool → Result<(), String>` | 写回原文件（cover 为 base64，Rust 侧解码）；`exportLrc` 勾选时同步写同目录同名 `.lrc`（空歌词忽略） |
+| `batch_update_tags(paths, fields)` | `Vec<String>, BatchTagFields → Result<BatchUpdateResult, String>` | 批量修改多个音频文件的特定标签（如播客改专辑名），仅更新指定字段 |
+| `batch_auto_match(paths, options)` | `Vec<String>, BatchMatchOptions → Result<BatchMatchSummary, String>` | 批量自动匹配与刮削（智能多源检索、Levenshtein 打分、封面歌词拉取与写盘） |
 | `rename_song(path, new_name)` | `String, String → Result<(), String>` | 音频 + `.lrc` 改名 |
 | `pick_cover_file()` | `() → Option<CoverInput>` | 原生封面文件选择器（jpg/png/webp）；取消返回 `None`，选中 → 压缩后 data URL + mime |
 | `read_cover_path(path)` | `String → Result<CoverInput, String>` | 拖拽封面路径 → 读文件 + 压缩 + data URL；读失败/非图片 → `Err(中文原因)` |

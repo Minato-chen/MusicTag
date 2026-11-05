@@ -6,7 +6,7 @@
 // - `rename_song` → `service::rename::rename_song`（音频 + `.lrc` 改名，独立动作）。
 // `#[tauri::command]` 与 Tauri command 字符串契约零改动。
 
-use crate::model::Song;
+use crate::model::{BatchTagFields, BatchUpdateResult, Song};
 use crate::service::reader::read_song_meta;
 use std::path::Path;
 
@@ -27,6 +27,15 @@ pub fn save_song(song: Song, export_lrc: bool) -> Result<(), String> {
     crate::service::writer::save_song(song, export_lrc)
 }
 
+/// 批量修改多首歌曲的特定标签（例如统一设置播客专辑名）。
+#[tauri::command]
+pub fn batch_update_tags(
+    paths: Vec<String>,
+    fields: BatchTagFields,
+) -> Result<BatchUpdateResult, String> {
+    crate::service::writer::batch_update_tags(&paths, &fields)
+}
+
 /// 改文件名（独立动作，FR-5.5）：音频 + 同名 `.lrc` 一并改名（语义见
 /// `service::rename::rename_song`）。撞名拒绝覆盖；`.lrc` 纯扩展名变化不动（FR-4.6a）。
 ///
@@ -35,4 +44,14 @@ pub fn save_song(song: Song, export_lrc: bool) -> Result<(), String> {
 #[tauri::command]
 pub fn rename_song(path: String, new_name: String) -> Result<(), String> {
     crate::service::rename::rename_song(Path::new(&path), &new_name)
+}
+
+/// 批量自动匹配与刮削（智能多源检索、Levenshtein 打分、封面歌词拉取与写盘）。
+#[tauri::command]
+pub async fn batch_auto_match(
+    paths: Vec<String>,
+    options: crate::model::BatchMatchOptions,
+    app: tauri::AppHandle,
+) -> Result<crate::model::BatchMatchSummary, String> {
+    crate::service::batch_matcher::batch_auto_match(&paths, &options, Some(&app)).await
 }
