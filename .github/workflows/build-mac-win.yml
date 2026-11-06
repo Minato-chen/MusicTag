@@ -87,10 +87,9 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          TAG="${{ (inputs.tag_name != '' && inputs.tag_name) || (startsWith(github.ref, 'refs/tags/v') && github.ref_name) || 'v0.2.2' }}"
-          if release_json=$(gh release view "$TAG" --repo "${{ github.repository }}" --json isDraft 2>/dev/null); then
-            if [[ "$(jq -r '.isDraft' <<< "$release_json")" == "true" ]]; then
-              gh release edit "$TAG" --repo "${{ github.repository }}" --draft=false
-              echo "Successfully published release $TAG"
-            fi
-          fi
+          draft_ids=$(gh api "repos/${{ github.repository }}/releases" --jq '.[] | select(.draft == true) | .id' || true)
+          for id in $draft_ids; do
+            echo "Publishing draft release ID $id..."
+            gh api -X PATCH "repos/${{ github.repository }}/releases/$id" -F draft=false
+          done
+          echo "All draft releases published."
